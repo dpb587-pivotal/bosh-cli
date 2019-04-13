@@ -25,6 +25,10 @@ func NewValidator(logger boshlog.Logger) Validator {
 func (v *validator) Validate(manifest Manifest, releaseSetManifest birelsetmanifest.Manifest) error {
 	errs := []error{}
 
+	if manifest.LocalVM {
+		return nil
+	}
+
 	cpiJobName := manifest.Template.Name
 	if v.isBlank(cpiJobName) {
 		errs = append(errs, bosherr.Error("cloud_provider.template.name must be provided"))

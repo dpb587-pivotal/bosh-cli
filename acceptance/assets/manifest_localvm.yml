@@ -1,0 +1,61 @@
+---
+# docker run --rm -ti -v $PWD:$PWD --privileged stemcell /bin/bash
+# umount /etc/hostname && umount /etc/resolv.conf && echo nameserver 8.8.8.8 > /etc/resolv.conf && env -i /usr/sbin/runsvdir-start & && runsv /etc/sv/monit &
+# chmod 777 /tmp/ && apt-get update && apt-get -y install ruby
+# /Users/dpb587/Projects/src/github.com/cloudfoundry/bosh-cli/out/bosh create-env /Users/dpb587/Projects/src/github.com/cloudfoundry/bosh-cli/acceptance/assets/manifest_localvm.yml --vars-store=/tmp/vars
+name: test-release
+
+releases:
+- name: "caddy"
+  version: "0.5.1"
+  url: "https://bosh.io/d/github.com/dpb587/caddy-bosh-release?v=0.5.1"
+  sha1: "f7cfa31c459d59e97d57e3d4e0b9c36642243dd4"
+
+resource_pools:
+- name: fake-resource-pool-name
+  network: fake-network-name
+  env:
+    bosh:
+      mbus:
+        cert: ((mbus_bootstrap_ssl))
+      password: '*'
+  stemcell: # tar -Oxzf ~/Downloads/bosh-stemcell-170.13-warden-boshlite-ubuntu-xenial-go_agent.tgz image | docker import - stemcell
+    url: file:///dev/null
+
+networks:
+- name: fake-network-name
+  type: dynamic
+
+cloud_provider:
+  localvm: true
+  cert: ((mbus_bootstrap_ssl))
+  mbus: https://mbus:((mbus_bootstrap_password))@127.0.0.1:6868
+
+instance_groups:
+- name: dummy_job
+  instances: 1
+  jobs:
+  - name: caddy
+    release: caddy
+    properties:
+      caddyfile: "TODO"
+  resource_pool: fake-resource-pool-name
+  networks:
+  - name: fake-network-name
+  # persistent_disk_pool: default
+
+variables:
+- name: default_ca
+  options:
+    common_name: ca
+    is_ca: true
+  type: certificate
+- name: mbus_bootstrap_ssl
+  options:
+    alternative_names:
+    - 127.0.0.1
+    ca: default_ca
+    common_name: localvm
+  type: certificate
+- name: mbus_bootstrap_password
+  type: password

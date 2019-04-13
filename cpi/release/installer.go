@@ -2,6 +2,7 @@ package release
 
 import (
 	biinstall "github.com/cloudfoundry/bosh-cli/installation"
+	biinstalllocalvm "github.com/cloudfoundry/bosh-cli/installation/localvm"
 	biinstallmanifest "github.com/cloudfoundry/bosh-cli/installation/manifest"
 	birel "github.com/cloudfoundry/bosh-cli/release"
 	biui "github.com/cloudfoundry/bosh-cli/ui"
@@ -15,6 +16,10 @@ type CpiInstaller struct {
 }
 
 func (i CpiInstaller) ValidateCpiRelease(installationManifest biinstallmanifest.Manifest, stage biui.Stage) error {
+	if installationManifest.LocalVM {
+		return nil
+	}
+
 	return stage.Perform("Validating cpi release", func() error {
 		cpiReleaseName := installationManifest.Template.Release
 		cpiRelease, found := i.ReleaseManager.Find(cpiReleaseName)
@@ -45,6 +50,10 @@ func (i CpiInstaller) installCpiRelease(installer biinstall.Installer, installat
 }
 
 func (i CpiInstaller) WithInstalledCpiRelease(installationManifest biinstallmanifest.Manifest, target biinstall.Target, stage biui.Stage, fn func(biinstall.Installation) error) (errToReturn error) {
+	if installationManifest.LocalVM {
+		return fn(biinstalllocalvm.Installation{})
+	}
+
 	installer := i.InstallerFactory.NewInstaller(target)
 
 	installation, err := i.installCpiRelease(installer, installationManifest, target, stage)

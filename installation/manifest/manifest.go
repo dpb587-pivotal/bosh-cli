@@ -5,6 +5,7 @@ import (
 )
 
 type Manifest struct {
+	LocalVM    bool
 	Name       string
 	Template   ReleaseJobRef
 	Properties biproperty.Map

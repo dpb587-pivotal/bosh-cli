@@ -17,6 +17,7 @@ import (
 	boshtpl "github.com/cloudfoundry/bosh-cli/director/template"
 	biinstall "github.com/cloudfoundry/bosh-cli/installation"
 	boshinst "github.com/cloudfoundry/bosh-cli/installation"
+	biinstalllocalvm "github.com/cloudfoundry/bosh-cli/installation/localvm"
 	biinstallmanifest "github.com/cloudfoundry/bosh-cli/installation/manifest"
 	birelsetmanifest "github.com/cloudfoundry/bosh-cli/release/set/manifest"
 	bistemcell "github.com/cloudfoundry/bosh-cli/stemcell"
@@ -166,13 +167,20 @@ func (c *DeploymentPreparer) PrepareDeployment(stage biui.Stage, recreate bool, 
 			return err
 		}
 
-		extractedStemcell, err = c.stemcellFetcher.GetStemcell(deploymentManifest, stage)
+		if !installationManifest.LocalVM {
+			extractedStemcell, err = c.stemcellFetcher.GetStemcell(deploymentManifest, stage)
+		}
+
 		return err
 	})
 	if err != nil {
 		return err
 	}
 	defer func() {
+		if extractedStemcell == nil {
+			return
+		}
+
 		deleteErr := extractedStemcell.Cleanup()
 		if deleteErr != nil {
 			c.logger.Warn(c.logTag, "Failed to delete extracted stemcell: %s", deleteErr.Error())
@@ -192,9 +200,18 @@ func (c *DeploymentPreparer) PrepareDeployment(stage biui.Stage, recreate bool, 
 	err = c.cpiInstaller.WithInstalledCpiRelease(installationManifest, target, stage, func(installation biinstall.Installation) error {
 		stemcellApiVersion := c.stemcellApiVersion(extractedStemcell)
 
-		cloud, err := c.cloudFactory.NewCloud(installation, deploymentState.DirectorID, stemcellApiVersion)
-		if err != nil {
-			return bosherr.WrapError(err, "Creating CPI client from CPI installation")
+		var cloud bicloud.Cloud
+		var err error
+
+		if installationManifest.LocalVM {
+			cloud = &biinstalllocalvm.Cloud{
+				Mbus: installationManifest.Mbus,
+			}
+		} else {
+			cloud, err = c.cloudFactory.NewCloud(installation, deploymentState.DirectorID, stemcellApiVersion)
+			if err != nil {
+				return bosherr.WrapError(err, "Creating CPI client from CPI installation")
+			}
 		}
 
 		deploy := func(usesRegistry bool) error {
@@ -208,7 +225,12 @@ func (c *DeploymentPreparer) PrepareDeployment(stage biui.Stage, recreate bool, 
 				skipDrain,
 				stage,
 				cloud,
-				usesRegistry)
+				usesRegistry,
+			)
+		}
+
+		if installationManifest.LocalVM {
+			return deploy(false)
 		}
 
 		cpiInfo, err := cloud.Info()
@@ -240,11 +262,18 @@ func (c *DeploymentPreparer) deploy(
 	cloud bicloud.Cloud,
 	usesRegistry bool,
 ) (err error) {
-	stemcellManager := c.stemcellManagerFactory.NewManager(cloud)
+	var cloudStemcell bistemcell.CloudStemcell
+	var stemcellManager bistemcell.Manager
 
-	cloudStemcell, err := stemcellManager.Upload(extractedStemcell, stage)
-	if err != nil {
-		return err
+	if extractedStemcell == nil {
+		cloudStemcell = &biinstalllocalvm.CloudStemcell{}
+	} else {
+		stemcellManager = c.stemcellManagerFactory.NewManager(cloud)
+
+		cloudStemcell, err = stemcellManager.Upload(extractedStemcell, stage)
+		if err != nil {
+			return err
+		}
 	}
 
 	agentClient, err := c.agentClientFactory.NewAgentClient(deploymentState.DirectorID, installationManifest.Mbus, installationManifest.Cert.CA)
@@ -296,15 +325,22 @@ func (c *DeploymentPreparer) deploy(
 
 	// TODO: cleanup unused disks here?
 
-	err = stemcellManager.DeleteUnused(stage)
-	if err != nil {
-		return err
+	if stemcellManager != nil {
+		err = stemcellManager.DeleteUnused(stage)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func (c *DeploymentPreparer) stemcellApiVersion(stemcell bistemcell.ExtractedStemcell) int {
+	if stemcell == nil {
+		// LocalVM == true
+		return 2
+	}
+
 	stemcellApiVersion := stemcell.Manifest().ApiVersion
 	if stemcellApiVersion == 0 {
 		return 1

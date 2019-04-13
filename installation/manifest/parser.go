@@ -35,6 +35,7 @@ type manifest struct {
 }
 
 type installation struct {
+	LocalVM    bool `yaml:"localvm"`
 	Template   template
 	Properties map[interface{}]interface{}
 	SSHTunnel  SSHTunnel `yaml:"ssh_tunnel"`
@@ -112,7 +113,8 @@ func (p *parser) Parse(path string, vars boshtpl.Variables, op patch.Op, release
 	}
 
 	installationManifest := Manifest{
-		Name: comboManifest.Name,
+		LocalVM: comboManifest.CloudProvider.LocalVM,
+		Name:    comboManifest.Name,
 		Template: ReleaseJobRef{
 			Name:    comboManifest.CloudProvider.Template.Name,
 			Release: comboManifest.CloudProvider.Template.Release,
